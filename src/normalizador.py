@@ -1,13 +1,14 @@
 import re
 from pathlib import Path
 
+from setores import identificar_setor
+from nomes import normalizar_nome
+from logger import log_warning
 from datas import (
     completar_periodo,
     formatar_periodo,
     extrair_periodo,
 )
-from setores import identificar_setor
-from nomes import normalizar_nome
 
 def normalizar_arquivo(caminho: Path) -> str | None:
     """
@@ -54,7 +55,9 @@ def normalizar_arquivo(caminho: Path) -> str | None:
     resultado_periodo = extrair_periodo(texto)
 
     if resultado_periodo is None:
-        print(f"[AVISO] Não foi possível identificar o período: {caminho.name}")
+        log_warning(
+            f"Não foi possível identificar o período: {caminho.name}"
+        )
         return None
 
     inicio, fim, inicio_pos, fim_pos = resultado_periodo
@@ -76,13 +79,17 @@ def normalizar_arquivo(caminho: Path) -> str | None:
     ]
 
     if not partes:
-        print(f"[AVISO] Não foi possível identificar nome/setor: {caminho.name}")
+        log_warning(
+            f"Não foi possível identificar nome/setor: {caminho.name}"
+        )
         return None
 
     resultado_nome_setor = identificar_setor(partes)
 
     if resultado_nome_setor is None:
-        print(f"[AVISO] Não foi possível identificar nome/setor: {caminho.name}")
+        log_warning(
+            f"Não foi possível identificar nome/setor: {caminho.name}"
+        )
         return None
 
     nome, setor = resultado_nome_setor
