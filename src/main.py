@@ -4,6 +4,27 @@ import shutil
 from pathlib import Path
 from datetime import date
 
+SETORES = {
+    "SEMS",
+    "SEDUC",
+    "SEMOSP",
+    "SEFIN",
+    "SARH",
+    "SECOM",
+    "SEDEC",
+    "SEMAP",
+    "SEMOB",
+    "SESP",
+    "SEMCI",
+    "SEDESO",
+    "SEGOV",
+    "PGM",
+    "SEMMADA",
+    "SEPLAN",
+    "SESMT",
+    "SELTC",
+}
+
 def completar_periodo(inicio, fim):
     """
     Completa os anos ausentes e garante que o período
@@ -37,44 +58,48 @@ def completar_periodo(inicio, fim):
 
     return inicio, fim
 
-def normalizar_data(data: str) -> str:
-    """
-    Converte datas nos formatos:
-    DD-MM-AA
-    DD.MM.AA
-    DD/MM/AA
-    DDMMYYYY
-    DD-MM-YYYY
-    etc.
+def normalizar_data(data: str) -> tuple[int, int, int | None]:
+    partes = re.split(r"[./-]", data)
 
-    Para o padrão final:
-    DD.MM.AA
-    """
+    if len(partes) == 3:
+        dia = int(partes[0])
+        mes = int(partes[1])
+        ano = int(partes[2])
+
+        if ano < 100:
+            ano += 2000
+
+        return dia, mes, ano
+
+    if len(partes) == 2:
+        dia = int(partes[0])
+        mes = int(partes[1])
+        return dia, mes, None
 
     numeros = re.sub(r"\D", "", data)
 
     if len(numeros) == 8:
-        # DDMMYYYY
-        dia = int(numeros[:2])
-        mes = int(numeros[2:4])
-        ano = int(numeros[4:8])
+        return (
+            int(numeros[:2]),
+            int(numeros[2:4]),
+            int(numeros[4:8])
+        )
 
-    elif len(numeros) == 6:
-        # DDMMYY
-        dia = int(numeros[:2])
-        mes = int(numeros[2:4])
-        ano = 2000 + int(numeros[4:6])
+    if len(numeros) == 6:
+        return (
+            int(numeros[:2]),
+            int(numeros[2:4]),
+            2000 + int(numeros[4:6])
+        )
 
-    elif len(numeros) == 4:
-        # DDMM
-        dia = int(numeros[:2])
-        mes = int(numeros[2:4])
-        ano = None
+    if len(numeros) == 4:
+        return (
+            int(numeros[:2]),
+            int(numeros[2:4]),
+            None
+        )
 
-    else:
-        raise ValueError(f"Data inválida: {data}")
-
-    return dia, mes, ano
+    raise ValueError(f"Data inválida: {data}")
 
 def formatar_periodo(inicio, fim):
     return (
@@ -104,40 +129,30 @@ def extrair_data(texto: str) -> str | None:
 
 
 def extrair_periodo(texto: str):
-    """
-    Procura dois valores de data separados por 'a' ou 'A'.
-
-    Exemplos:
-        10.09 A 16.10.26
-        31-08-26 a 14-09-26
-        24082026 a 28082026
-        20.12 a 10.01.26
-    """
-
     data = (
         r"(?:"
-        r"\d{2}[./-]\d{2}[./-]\d{2,4}"
+        r"\d{1,2}[./-]\d{1,2}[./-]\d{2,4}"
         r"|\d{8}"
         r"|\d{6}"
-        r"|\d{2}[./-]\d{2}"
+        r"|\d{1,2}[./-]\d{1,2}"
         r")"
     )
 
     padrao = (
         f"({data})"
-        r"\s+[aA]\s+"
+        r"\s+(?:[aA]|-)\s+"
         f"({data})"
     )
 
     resultado = re.search(padrao, texto)
 
     if not resultado:
-        return None, None
+        return None
 
     inicio = normalizar_data(resultado.group(1))
     fim = normalizar_data(resultado.group(2))
 
-    return inicio, fim
+    return inicio, fim, resultado.start(), resultado.end()
 
 
 def normalizar_nome(nome: str) -> str:
@@ -149,6 +164,46 @@ def normalizar_nome(nome: str) -> str:
 
     return nome.upper()
 
+def identificar_setor(partes: list[str]):
+    """
+    Identifica o setor utilizando a lista de setores conhecidos.
+
+    O setor pode estar:
+    - separado por " - "
+    - grudado ao final do nome
+    """
+
+    # Primeiro procura um campo que seja exatamente um setor
+    for i in range(len(partes) - 1, -1, -1):
+        parte = partes[i].upper().strip()
+
+        if parte in SETORES:
+            nome = " ".join(partes[:i])
+
+            if not nome:
+                return None
+
+            return nome, parte
+
+    # Caso o setor esteja grudado ao final do nome,
+    # procura um setor conhecido no final do texto.
+    texto = " ".join(partes).strip()
+    texto_upper = texto.upper()
+
+    setores_ordenados = sorted(
+        SETORES,
+        key=len,
+        reverse=True
+    )
+
+    for setor in setores_ordenados:
+        if texto_upper.endswith(setor):
+            nome = texto[:-len(setor)].strip()
+
+            if nome:
+                return nome, setor
+
+    return None
 
 def normalizar_arquivo(caminho: Path) -> str | None:
     """
@@ -165,32 +220,19 @@ def normalizar_arquivo(caminho: Path) -> str | None:
         flags=re.IGNORECASE
     )
 
-    # Extrai o período
-    inicio, fim = extrair_periodo(texto)
+    # converte espaços multiplicados em único
+    texto = re.sub(r"\s+", " ", texto).strip()
+    
+    resultado_periodo = extrair_periodo(texto)
 
-    if not inicio or not fim:
+    if resultado_periodo is None:
         print(f"[AVISO] Não foi possível identificar o período: {caminho.name}")
         return None
 
-    # Remove o período do texto
-    texto_sem_periodo = re.sub(
-        r"("
-        r"\d{2}[./-]\d{2}[./-]\d{2,4}"
-        r"|\d{8}"
-        r"|\d{6}"
-        r"|\d{2}[./-]\d{2}"
-        r")"
-        r"\s+[aA]\s+"
-        r"("
-        r"\d{2}[./-]\d{2}[./-]\d{2,4}"
-        r"|\d{8}"
-        r"|\d{6}"
-        r"|\d{2}[./-]\d{2}"
-        r")",
-        "",
-        texto,
-        count=1
-    )
+    inicio, fim, inicio_pos, fim_pos = resultado_periodo
+
+    # Remove exatamente o período encontrado
+    texto_sem_periodo = texto[:inicio_pos] + texto[fim_pos:]
 
     # Limpa separadores duplicados
     texto_sem_periodo = re.sub(
@@ -209,15 +251,17 @@ def normalizar_arquivo(caminho: Path) -> str | None:
         print(f"[AVISO] Não foi possível identificar nome/setor: {caminho.name}")
         return None
 
-    # O último campo é considerado o setor
-    setor = partes[-1]
+    resultado_nome_setor = identificar_setor(partes)
 
-    # Tudo antes do setor é considerado nome
-    nome = " ".join(partes[:-1])
+    if resultado_nome_setor is None:
+        print(f"[AVISO] Não foi possível identificar nome/setor: {caminho.name}")
+        return None
+
+    nome, setor = resultado_nome_setor
 
     nome = normalizar_nome(nome)
     setor = setor.upper().strip()
-
+    
     inicio, fim = completar_periodo(inicio, fim)
 
     periodo = formatar_periodo(inicio, fim)
