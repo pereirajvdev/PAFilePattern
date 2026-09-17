@@ -138,21 +138,35 @@ def extrair_periodo(texto: str):
         r")"
     )
 
-    padrao = (
+    # Primeiro tenta encontrar um período com duas datas
+    padrao_periodo = (
         f"({data})"
         r"\s+(?:[aA]|-)\s+"
         f"({data})"
     )
 
-    resultado = re.search(padrao, texto)
+    resultado = re.search(padrao_periodo, texto)
 
-    if not resultado:
-        return None
+    if resultado:
+        inicio = normalizar_data(resultado.group(1))
+        fim = normalizar_data(resultado.group(2))
 
-    inicio = normalizar_data(resultado.group(1))
-    fim = normalizar_data(resultado.group(2))
+        return inicio, fim, resultado.start(), resultado.end()
 
-    return inicio, fim, resultado.start(), resultado.end()
+    # Se não encontrou período, procura uma única data
+    resultado = re.search(data, texto)
+
+    if resultado:
+        data_unica = normalizar_data(resultado.group())
+
+        return (
+            data_unica,
+            data_unica,
+            resultado.start(),
+            resultado.end()
+        )
+
+    return None
 
 
 def normalizar_nome(nome: str) -> str:
@@ -173,7 +187,7 @@ def identificar_setor(partes: list[str]):
     - grudado ao final do nome
     """
 
-    # Primeiro procura um campo que seja exatamente um setor
+    # Procura primeiro um campo que seja exatamente um setor
     for i in range(len(partes) - 1, -1, -1):
         parte = partes[i].upper().strip()
 
@@ -185,11 +199,11 @@ def identificar_setor(partes: list[str]):
 
             return nome, parte
 
-    # Caso o setor esteja grudado ao final do nome,
-    # procura um setor conhecido no final do texto.
+    # Caso o setor esteja grudado ao final do nome
     texto = " ".join(partes).strip()
     texto_upper = texto.upper()
 
+    # Setores maiores primeiro
     setores_ordenados = sorted(
         SETORES,
         key=len,
@@ -212,17 +226,41 @@ def normalizar_arquivo(caminho: Path) -> str | None:
 
     nome_original = caminho.stem
 
-    # Remove o prefixo PA
-    texto = re.sub(
-        r"^\s*PA\s*[-–—]?\s*",
-        "",
+    # Identifica e remove o prefixo do arquivo
+    resultado_prefixo = re.match(
+        r"^\s*(PA|CAT)\s*[-–—]?\s*",
         nome_original,
         flags=re.IGNORECASE
     )
 
+    if resultado_prefixo is None:
+        print(f"[AVISO] Prefixo não identificado: {caminho.name}")
+        return None
+
+    prefixo = resultado_prefixo.group(1).upper()
+
+    texto = nome_original[resultado_prefixo.end():]
+
+    # Substitui underscore por hífen    
+    texto = texto.replace("_", "-")
+
+    # Identifica a marcação de contrato
+    eh_contrato = bool(
+        re.search(r"\s+(?:CONT|CONTRATO)\s+(?=-)", texto, re.IGNORECASE)
+    )
+
+    # Remove a marcação do texto para facilitar a identificação do nome
+    if eh_contrato:
+        texto = re.sub(
+            r"\s+(?:CONT|CONTRATO)\s+(?=-)",
+            " ",
+            texto,
+            flags=re.IGNORECASE
+        )
+
     # converte espaços multiplicados em único
     texto = re.sub(r"\s+", " ", texto).strip()
-    
+
     resultado_periodo = extrair_periodo(texto)
 
     if resultado_periodo is None:
@@ -247,7 +285,7 @@ def normalizar_arquivo(caminho: Path) -> str | None:
         if parte.strip()
     ]
 
-    if len(partes) < 2:
+    if not partes:
         print(f"[AVISO] Não foi possível identificar nome/setor: {caminho.name}")
         return None
 
@@ -266,7 +304,10 @@ def normalizar_arquivo(caminho: Path) -> str | None:
 
     periodo = formatar_periodo(inicio, fim)
 
-    return f"PA - {nome} - {setor} - {periodo}.pdf"
+    if eh_contrato:
+        return f"{prefixo} - {nome} - {setor} - {periodo} - CONTRATO.pdf"
+
+    return f"{prefixo} - {nome} - {setor} - {periodo}.pdf"
 
 
 def processar_pasta(pasta_entrada: Path, pasta_saida: Path, pasta_ignorados: Path):
