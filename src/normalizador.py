@@ -8,6 +8,7 @@ from datas import (
     completar_periodo,
     formatar_periodo,
     extrair_periodo,
+    possui_outro_periodo,
 )
 
 def normalizar_arquivo(caminho: Path) -> str | None:
@@ -61,6 +62,12 @@ def normalizar_arquivo(caminho: Path) -> str | None:
         return None
 
     inicio, fim, inicio_pos, fim_pos = resultado_periodo
+
+    if possui_outro_periodo(texto, fim_pos):
+        log_warning(
+            f"Mais de um período identificado: {caminho.name}"
+        )
+        return None
 
     # Separa o que vem depois do período
     comentario = texto[fim_pos:].strip()

@@ -143,3 +143,22 @@ def extrair_periodo(texto: str):
         )
 
     return None
+
+def possui_outro_periodo(texto: str, fim_pos: int) -> bool:
+    """
+    Verifica se existe outra data ou período depois
+    do período já identificado.
+    """
+
+    restante = texto[fim_pos:]
+
+    data = (
+        r"(?:"
+        r"\d{1,2}[./-]\d{1,2}[./-]\d{2,4}"
+        r"|\d{8}"
+        r"|\d{6}"
+        r"|\d{1,2}[./-]\d{1,2}"
+        r")"
+    )
+
+    return re.search(data, restante) is not None

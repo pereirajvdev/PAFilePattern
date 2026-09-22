@@ -5,6 +5,28 @@ from tqdm import tqdm
 from logger import log_ok, log_warning
 from normalizador import normalizar_arquivo
 
+def obter_destino_disponivel(destino: Path) -> Path:
+    """
+    Retorna um caminho disponível.
+    Se o arquivo já existir, adiciona (2), (3), etc.
+    """
+
+    if not destino.exists():
+        return destino
+
+    contador = 2
+
+    while True:
+        novo_destino = (
+            destino.parent
+            / f"{destino.stem} ({contador}){destino.suffix}"
+        )
+
+        if not novo_destino.exists():
+            return novo_destino
+
+        contador += 1
+
 def processar_pasta(
     pasta_entrada: Path,
     pasta_saida: Path | None,
@@ -59,19 +81,16 @@ def processar_pasta(
             continue
 
         if pasta_saida:
-            # Modo com --out: copia para a pasta de saída
+            # Modo com --out
             destino = pasta_saida / novo_nome
+            destino = obter_destino_disponivel(destino)
+
             shutil.copy2(arquivo, destino)
 
         else:
             # Modo sem --out
             destino = arquivo.parent / novo_nome
-
-            if destino.exists():
-                log_warning(
-                    f"Arquivo já existe, não renomeado: {novo_nome}"
-                )
-                continue
+            destino = obter_destino_disponivel(destino)
 
             arquivo.rename(destino)
 
