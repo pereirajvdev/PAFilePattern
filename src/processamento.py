@@ -13,7 +13,7 @@ def processar_pasta(pasta_entrada: Path, pasta_saida: Path, pasta_ignorados: Pat
     pasta_saida.mkdir(parents=True, exist_ok=True)
     pasta_ignorados.mkdir(parents=True, exist_ok=True)
 
-    arquivos = list(pasta_entrada.glob("*.pdf"))
+    arquivos = list(pasta_entrada.rglob("*.pdf"))
 
     if not arquivos:
         print("[INFO] Nenhum arquivo PDF encontrado.")
