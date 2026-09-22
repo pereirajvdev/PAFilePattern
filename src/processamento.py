@@ -5,15 +5,25 @@ from tqdm import tqdm
 from logger import log_ok, log_warning
 from normalizador import normalizar_arquivo
 
-def processar_pasta(pasta_entrada: Path, pasta_saida: Path, pasta_ignorados: Path):
+def processar_pasta(
+    pasta_entrada: Path,
+    pasta_saida: Path | None,
+    pasta_ignorados: Path
+):
     """
     Processa todos os PDFs da pasta de entrada.
     """
 
-    pasta_saida.mkdir(parents=True, exist_ok=True)
+    if pasta_saida:
+        pasta_saida.mkdir(parents=True, exist_ok=True)
+
     pasta_ignorados.mkdir(parents=True, exist_ok=True)
 
-    arquivos = list(pasta_entrada.rglob("*.pdf"))
+    arquivos = [
+        arquivo
+        for arquivo in pasta_entrada.rglob("*.pdf")
+        if pasta_ignorados not in arquivo.parents
+    ]
 
     if not arquivos:
         print("[INFO] Nenhum arquivo PDF encontrado.")
@@ -48,9 +58,22 @@ def processar_pasta(pasta_entrada: Path, pasta_saida: Path, pasta_ignorados: Pat
             ignorados += 1
             continue
 
-        destino = pasta_saida / novo_nome
+        if pasta_saida:
+            # Modo com --out: copia para a pasta de saída
+            destino = pasta_saida / novo_nome
+            shutil.copy2(arquivo, destino)
 
-        shutil.copy2(arquivo, destino)
+        else:
+            # Modo sem --out
+            destino = arquivo.parent / novo_nome
+
+            if destino.exists():
+                log_warning(
+                    f"Arquivo já existe, não renomeado: {novo_nome}"
+                )
+                continue
+
+            arquivo.rename(destino)
 
         log_ok(
             f"Arquivo processado: {arquivo.name} -> {novo_nome}"

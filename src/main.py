@@ -15,21 +15,25 @@ def main():
 
     parser.add_argument(
         "--out",
-        required=True,
-        help="Pasta onde os arquivos normalizados serão salvos."
+        help="Pasta onde os arquivos normalizados serão salvos. "
+            "Se não informado, os arquivos serão renomeados na própria pasta."
     )
 
     parser.add_argument(
         "--ignored",
-        required=True,
         help="Pasta onde os arquivos que não puderam ser processados serão salvos."
     )
 
     args = parser.parse_args()
 
     pasta_entrada = Path(args.entrada)
-    pasta_saida = Path(args.out)
-    pasta_ignorados = Path(args.ignored)
+    pasta_saida = Path(args.out) if args.out else None
+
+    pasta_ignorados = (
+        Path(args.ignored)
+        if args.ignored
+        else pasta_entrada / "Ignored"
+    )
 
     if not pasta_entrada.exists():
         print(f"[ERRO] Pasta de entrada não encontrada: {pasta_entrada}")
