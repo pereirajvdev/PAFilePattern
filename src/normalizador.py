@@ -62,8 +62,18 @@ def normalizar_arquivo(caminho: Path) -> str | None:
 
     inicio, fim, inicio_pos, fim_pos = resultado_periodo
 
-    # Remove exatamente o período encontrado
-    texto_sem_periodo = texto[:inicio_pos] + texto[fim_pos:]
+    # Separa o que vem depois do período
+    comentario = texto[fim_pos:].strip()
+
+    # Remove o período
+    texto_sem_periodo = texto[:inicio_pos]
+
+    # Remove o separador que eventualmente ficou no início
+    comentario = re.sub(
+        r"^\s*[-–—]\s*",
+        "",
+        comentario
+    ).strip()
 
     # Limpa separadores duplicados
     texto_sem_periodo = re.sub(
@@ -102,6 +112,14 @@ def normalizar_arquivo(caminho: Path) -> str | None:
     periodo = formatar_periodo(inicio, fim)
 
     if eh_contrato:
-        return f"{prefixo} - {nome} - {setor} - {periodo} - CONTRATO.pdf"
+        comentario_final = "CONTRATO"
+
+        if comentario:
+            comentario_final += f" - {comentario.upper()}"
+
+        return f"{prefixo} - {nome} - {setor} - {periodo} - {comentario_final}.pdf"
+
+    if comentario:
+        return f"{prefixo} - {nome} - {setor} - {periodo} - {comentario.upper()}.pdf"
 
     return f"{prefixo} - {nome} - {setor} - {periodo}.pdf"
