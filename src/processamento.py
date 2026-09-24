@@ -30,7 +30,8 @@ def obter_destino_disponivel(destino: Path) -> Path:
 def processar_pasta(
     pasta_entrada: Path,
     pasta_saida: Path | None,
-    pasta_ignorados: Path
+    pasta_ignorados: Path,
+    pasta_nao_processar: Path | None = None
 ):
     """
     Processa todos os PDFs da pasta de entrada.
@@ -45,6 +46,10 @@ def processar_pasta(
         arquivo
         for arquivo in pasta_entrada.rglob("*.pdf")
         if pasta_ignorados not in arquivo.parents
+        and (
+            pasta_nao_processar is None
+            or pasta_nao_processar not in arquivo.parents
+        )
     ]
 
     if not arquivos:
