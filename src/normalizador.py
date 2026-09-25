@@ -53,6 +53,14 @@ def normalizar_arquivo(caminho: Path) -> str | None:
     # converte espaços multiplicados em único
     texto = re.sub(r"\s+", " ", texto).strip()
 
+    # Remove sufixos de duplicação já existentes:
+    # (2), (3), (2) (2), - (2), - (2) (2), etc.
+    texto = re.sub(
+        r"(?:\s*-\s*)?(?:\(\d+\)\s*)+$",
+        "",
+        texto
+    ).strip()
+
     resultado_periodo = extrair_periodo(texto)
 
     if resultado_periodo is None:
@@ -71,6 +79,13 @@ def normalizar_arquivo(caminho: Path) -> str | None:
 
     # Separa o que vem depois do período
     comentario = texto[fim_pos:].strip()
+
+    # Remove marcações de duplicação do comentário, como (2), (3), - (2), etc.
+    comentario = re.sub(
+        r"(?:\s*-\s*)?\(\d+\)\s*$",
+        "",
+        comentario
+    ).strip()
 
     # Remove o período
     texto_sem_periodo = texto[:inicio_pos]
