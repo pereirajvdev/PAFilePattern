@@ -73,7 +73,7 @@ def processar_pasta(
         if novo_nome is None:
             destino_ignorado = pasta_ignorados / arquivo.name
 
-            shutil.copy2(
+            shutil.move(
                 arquivo,
                 destino_ignorado
             )
