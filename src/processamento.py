@@ -153,16 +153,9 @@ def processar_pasta(
             identificador = identificador_arquivo(arquivo, pasta_entrada)
 
             if identificador in cache_ignorados:
-                destino_ignorado = obter_destino_disponivel(
-                    pasta_ignorados / arquivo.name
-                )
-
-                shutil.move(str(arquivo), str(destino_ignorado))
-
                 log_warning(
-                    f"Arquivo já ignorado anteriormente: {arquivo.name}"
+                    f"Arquivo ignorado pelo cache, sem mover novamente: {arquivo.name}"
                 )
-
                 ignorados += 1
                 continue
             
