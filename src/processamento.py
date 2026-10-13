@@ -85,19 +85,32 @@ def processar_pasta(
             ignorados += 1
             continue
 
+        
         if pasta_saida:
             # Modo com --out
             destino = pasta_saida / novo_nome
-            destino = obter_destino_disponivel(destino)
 
+            # Se o arquivo já está no destino com o nome correto,
+            # não cria uma cópia com (2).
+            if arquivo.resolve() == destino.resolve():
+                processados += 1
+                continue
+
+            destino = obter_destino_disponivel(destino)
             shutil.copy2(arquivo, destino)
 
         else:
             # Modo sem --out
             destino = arquivo.parent / novo_nome
-            destino = obter_destino_disponivel(destino)
 
+            # Se o nome já está correto, não faz nada.
+            if arquivo.resolve() == destino.resolve():
+                processados += 1
+                continue
+
+            destino = obter_destino_disponivel(destino)
             arquivo.rename(destino)
+
 
         log_ok(
             f"Arquivo processado: {arquivo.name} -> {novo_nome}"
