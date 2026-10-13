@@ -1,9 +1,12 @@
+import json
 import shutil
-from pathlib import Path
-from tqdm import tqdm
 
+from tqdm import tqdm
+from pathlib import Path
 from logger import log_ok, log_warning
 from normalizador import normalizar_arquivo
+
+PASTA_PROJETO = Path(__file__).resolve().parent.parent
 
 def obter_destino_disponivel(destino: Path) -> Path:
     """
@@ -42,6 +45,43 @@ def mover_para_copias(arquivo: Path, pasta_copias: Path) -> Path:
     return destino
 
 
+
+def carregar_cache(caminho: Path) -> set[str]:
+    """Carrega os identificadores dos arquivos já ignorados."""
+    if not caminho.exists():
+        return set()
+
+    try:
+        with caminho.open("r", encoding="utf-8") as arquivo:
+            dados = json.load(arquivo)
+
+        return set(dados)
+
+    except (json.JSONDecodeError, OSError):
+        return set()
+
+
+def salvar_cache(caminho: Path, cache: set[str]) -> None:
+    """Salva o cache de arquivos ignorados."""
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+
+    with caminho.open("w", encoding="utf-8") as arquivo:
+        json.dump(
+            sorted(cache),
+            arquivo,
+            ensure_ascii=False,
+            indent=2
+        )
+
+
+def identificador_arquivo(arquivo: Path, pasta_entrada: Path) -> str:
+    """Identifica o arquivo sem precisar ler todo o PDF."""
+    caminho_relativo = arquivo.relative_to(pasta_entrada).as_posix()
+    stat = arquivo.stat()
+
+    return f"{caminho_relativo}|{stat.st_size}|{stat.st_mtime_ns}"
+
+
 def processar_pasta(
     pasta_entrada: Path,
     pasta_saida: Path | None,
@@ -58,21 +98,40 @@ def processar_pasta(
 
     pasta_ignorados.mkdir(parents=True, exist_ok=True)
 
+    pasta_base = pasta_saida if pasta_saida else pasta_entrada
+
+    arquivo_cache = PASTA_PROJETO / ".cache_ignorados.json"
+    cache_ignorados = carregar_cache(arquivo_cache)
+
     # A pasta copias fica na saída, se houver --out;
     # caso contrário, fica na pasta de entrada.
-    pasta_base = pasta_saida if pasta_saida else pasta_entrada
+
     pasta_copias = pasta_base / "copias"
+
+    
+    # Pastas que não devem entrar na busca de PDFs.
+    
+    pastas_excluidas = [
+        pasta.resolve()
+        for pasta in [
+            pasta_ignorados,
+            pasta_base / "copias",
+            pasta_base / "copias diferentes",
+            *([pasta_nao_processar] if pasta_nao_processar else []),
+        ]
+    ]
 
     arquivos = [
         arquivo
         for arquivo in pasta_entrada.rglob("*.pdf")
-        if pasta_ignorados not in arquivo.parents
-        and pasta_copias not in arquivo.parents
-        and (
-            pasta_nao_processar is None
-            or pasta_nao_processar not in arquivo.parents
+        if not any(
+            pasta_excluida == pai.resolve()
+            for pasta_excluida in pastas_excluidas
+            for pai in arquivo.parents
         )
     ]
+
+
 
     if not arquivos:
         print("[INFO] Nenhum arquivo PDF encontrado.")
@@ -91,6 +150,22 @@ def processar_pasta(
         dynamic_ncols=True
     ):
         try:
+            identificador = identificador_arquivo(arquivo, pasta_entrada)
+
+            if identificador in cache_ignorados:
+                destino_ignorado = obter_destino_disponivel(
+                    pasta_ignorados / arquivo.name
+                )
+
+                shutil.move(str(arquivo), str(destino_ignorado))
+
+                log_warning(
+                    f"Arquivo já ignorado anteriormente: {arquivo.name}"
+                )
+
+                ignorados += 1
+                continue
+            
             novo_nome = normalizar_arquivo(arquivo)
 
             if novo_nome is None:
@@ -100,6 +175,8 @@ def processar_pasta(
 
                 shutil.move(str(arquivo), str(destino_ignorado))
 
+                cache_ignorados.add(identificador)
+                
                 log_warning(
                     f"Arquivo ignorado e movido: {arquivo.name}"
                 )
@@ -167,6 +244,8 @@ def processar_pasta(
             log_warning(
                 f"Erro ao processar {arquivo.name}: {erro}"
             )
+
+    salvar_cache(arquivo_cache, cache_ignorados)
 
     print()
     print("─" * 50)
