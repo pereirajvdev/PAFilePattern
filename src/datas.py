@@ -80,7 +80,7 @@ def normalizar_data(data: str) -> tuple[int, int, int | None]:
 def formatar_periodo(inicio, fim):
     return (
         f"{inicio.day:02d}.{inicio.month:02d}.{inicio.year:04d} "
-        f"A "
+        f"a "
         f"{fim.day:02d}.{fim.month:02d}.{fim.year:04d}"
     )
 
