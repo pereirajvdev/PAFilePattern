@@ -1,64 +1,66 @@
-
-import shutil
-
 from pathlib import Path
 from tqdm import tqdm
 
 from logger import log_ok, log_warning
 from normalizador import normalizar_arquivo
 from cache import carregar_cache, salvar_cache, identificador_arquivo
-from arquivos import obter_destino_disponivel
+from arquivos import (
+    enviar_para_ignorados,
+    enviar_para_copiados,
+    listar_pdfs,
+)
 
 
 def processar_pasta(
     pasta_entrada: Path,
     pasta_saida: Path | None,
     pasta_ignorados: Path,
-    pasta_nao_processar: Path | None = None
+    pasta_nao_processar: Path | None = None,
 ):
     """Processa PDFs, separando ignorados e arquivos duplicados."""
 
     pasta_entrada = pasta_entrada.resolve()
-    pasta_ignorados.mkdir(parents=True, exist_ok=True)
+    copiar = pasta_saida is not None
 
     if pasta_saida:
         pasta_saida.mkdir(parents=True, exist_ok=True)
         pasta_saida = pasta_saida.resolve()
 
+    pasta_ignorados.mkdir(parents=True, exist_ok=True)
+    pasta_ignorados = pasta_ignorados.resolve()
+
     if pasta_nao_processar:
         pasta_nao_processar = pasta_nao_processar.resolve()
 
-    pasta_base = pasta_saida if pasta_saida else pasta_entrada
-    pasta_copias = pasta_base / "copias"
-    pasta_copias_diferentes = pasta_base / "copias diferentes"
+    pasta_base = pasta_saida if copiar else pasta_entrada
 
-    cache_ignorados = carregar_cache()
+    pasta_copiados = pasta_base / "copiados"
+    pasta_copiados_diferentes = pasta_base / "copiados diferente"
 
     pastas_excluidas = [
-        pasta.resolve()
-        for pasta in [
-            pasta_ignorados,
-            pasta_base / "copias",
-            pasta_base / "copias diferentes",
-            *([pasta_nao_processar] if pasta_nao_processar else []),
-        ]
+        pasta_ignorados,
+        pasta_copiados,
+        pasta_copiados_diferentes,
     ]
 
-    arquivos = [
-        arquivo
-        for arquivo in pasta_entrada.rglob("*.pdf")
-        if not any(
-            excluida == pai.resolve()
-            for excluida in pastas_excluidas
-            for pai in arquivo.parents
-        )
-    ]
+    if pasta_saida:
+        pastas_excluidas.append(pasta_saida)
+
+    if pasta_nao_processar:
+        pastas_excluidas.append(pasta_nao_processar)
+
+    arquivos = listar_pdfs(
+        pasta_entrada,
+        pastas_excluidas,
+    )
 
     if not arquivos:
         print("[INFO] Nenhum arquivo PDF encontrado.")
         return
 
     print(f"[INFO] Encontrados {len(arquivos)} arquivos.\n")
+
+    cache_ignorados = carregar_cache()
 
     processados = 0
     ignorados = 0
@@ -68,14 +70,14 @@ def processar_pasta(
         arquivos,
         desc="Processando",
         unit="arquivo",
-        dynamic_ncols=True
+        dynamic_ncols=True,
     ):
         try:
             identificador = identificador_arquivo(
-                arquivo, pasta_entrada
+                arquivo,
+                pasta_entrada,
             )
 
-            # Arquivos já registrados não são processados novamente.
             if identificador in cache_ignorados:
                 log_warning(
                     f"Ignorado pelo cache, sem mover: {arquivo.name}"
@@ -86,33 +88,31 @@ def processar_pasta(
             novo_nome = normalizar_arquivo(arquivo)
 
             if novo_nome is None:
-                destino_ignorado = obter_destino_disponivel(
-                    pasta_ignorados / arquivo.name
+                destino = enviar_para_ignorados(
+                    arquivo,
+                    pasta_ignorados,
+                    copiar,
                 )
 
-                if pasta_saida:
-                    shutil.copy2(arquivo, destino_ignorado)
-                    log_warning(
-                        f"Arquivo ignorado e copiado: "
-                        f"{arquivo.name} -> {destino_ignorado}"
-                    )
-                else:
-                    shutil.move(str(arquivo), str(destino_ignorado))
-                    log_warning(
-                        f"Arquivo ignorado e movido: {arquivo.name}"
-                    )
-
                 cache_ignorados.add(identificador)
+
+                acao = "copiado" if copiar else "movido"
+
+                log_warning(
+                    f"Arquivo ignorado e {acao}: "
+                    f"{arquivo.name} -> {destino}"
+                )
+
                 ignorados += 1
                 continue
 
             destino = (
                 pasta_saida / novo_nome
-                if pasta_saida
+                if copiar
                 else arquivo.parent / novo_nome
             )
 
-            if not pasta_saida and arquivo.resolve() == destino.resolve():
+            if not copiar and arquivo.resolve() == destino.resolve():
                 processados += 1
                 continue
 
@@ -122,50 +122,54 @@ def processar_pasta(
                 )
 
                 pasta_destino = (
-                    pasta_copias
+                    pasta_copiados
                     if mesma_tamanho
-                    else pasta_copias_diferentes
+                    else pasta_copiados_diferentes
                 )
 
-                pasta_destino.mkdir(parents=True, exist_ok=True)
-
-                destino_copia = obter_destino_disponivel(
-                    pasta_destino / novo_nome
+                destino_copia = enviar_para_copiados(
+                    arquivo,
+                    pasta_destino,
+                    copiar,
+                    novo_nome,
                 )
 
-                if pasta_saida:
-                    shutil.copy2(arquivo, destino_copia)
-                    descricao = (
-                        "Cópia criada"
-                        if mesma_tamanho
-                        else "Cópia diferente criada"
-                    )
-                else:
-                    shutil.move(str(arquivo), str(destino_copia))
-                    descricao = (
-                        "Cópia movida"
-                        if mesma_tamanho
-                        else "Cópia diferente movida"
-                    )
+                descricao = (
+                    "Cópia criada"
+                    if copiar and mesma_tamanho
+                    else "Cópia diferente criada"
+                    if copiar
+                    else "Cópia movida"
+                    if mesma_tamanho
+                    else "Cópia diferente movida"
+                )
 
                 log_warning(
                     f"{descricao}: {arquivo.name} -> {destino_copia}"
                 )
+
                 copias += 1
                 continue
 
-            if pasta_saida:
-                shutil.copy2(arquivo, destino)
-            else:
-                arquivo.rename(destino)
+            from arquivos import copiar_ou_mover
+
+            copiar_ou_mover(
+                arquivo,
+                destino,
+                copiar,
+            )
 
             log_ok(
-                f"Arquivo processado: {arquivo.name} -> {destino.name}"
+                f"Arquivo processado: "
+                f"{arquivo.name} -> {destino.name}"
             )
+
             processados += 1
 
         except Exception as erro:
-            log_warning(f"Erro ao processar {arquivo.name}: {erro}")
+            log_warning(
+                f"Erro ao processar {arquivo.name}: {erro}"
+            )
 
     salvar_cache(cache_ignorados)
 
@@ -175,6 +179,8 @@ def processar_pasta(
     print("─" * 50)
     print(f"✓ Processados: {processados}")
     print(f"! Ignorados:   {ignorados}")
-    descricao_copias = "Cópias criadas" if pasta_saida else "Cópias movidas"
-    print(f"↪ {descricao_copias}: {copias}")
+    print(
+        f"↪ {'Cópias criadas' if copiar else 'Cópias movidas'}: "
+        f"{copias}"
+    )
     print("─" * 50)
