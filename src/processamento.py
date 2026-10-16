@@ -1,4 +1,5 @@
 from pathlib import Path
+from uuid import uuid4
 from tqdm import tqdm
 
 from logger import log_ok, log_warning
@@ -8,6 +9,7 @@ from arquivos import (
     enviar_para_ignorados,
     enviar_para_copiados,
     listar_pdfs,
+    copiar_ou_mover,
 )
 
 
@@ -17,12 +19,12 @@ def processar_pasta(
     pasta_ignorados: Path,
     pasta_nao_processar: Path | None = None,
 ):
-    """Processa PDFs, separando ignorados e arquivos duplicados."""
+    """Processa PDFs, normalizando nomes e separando duplicatas."""
 
     pasta_entrada = pasta_entrada.resolve()
     copiar = pasta_saida is not None
 
-    if pasta_saida:
+    if copiar:
         pasta_saida.mkdir(parents=True, exist_ok=True)
         pasta_saida = pasta_saida.resolve()
 
@@ -49,10 +51,7 @@ def processar_pasta(
     if pasta_nao_processar:
         pastas_excluidas.append(pasta_nao_processar)
 
-    arquivos = listar_pdfs(
-        pasta_entrada,
-        pastas_excluidas,
-    )
+    arquivos = listar_pdfs(pasta_entrada, pastas_excluidas)
 
     if not arquivos:
         print("[INFO] Nenhum arquivo PDF encontrado.")
@@ -73,6 +72,9 @@ def processar_pasta(
         dynamic_ncols=True,
     ):
         try:
+            # Guarda o nome original antes de qualquer processamento.
+            nome_original = arquivo.name
+
             identificador = identificador_arquivo(
                 arquivo,
                 pasta_entrada,
@@ -80,7 +82,7 @@ def processar_pasta(
 
             if identificador in cache_ignorados:
                 log_warning(
-                    f"Ignorado pelo cache, sem mover: {arquivo.name}"
+                    f"Ignorado pelo cache, sem mover: {nome_original}"
                 )
                 ignorados += 1
                 continue
@@ -88,7 +90,7 @@ def processar_pasta(
             novo_nome = normalizar_arquivo(arquivo)
 
             if novo_nome is None:
-                destino = enviar_para_ignorados(
+                destino_ignorado = enviar_para_ignorados(
                     arquivo,
                     pasta_ignorados,
                     copiar,
@@ -100,7 +102,7 @@ def processar_pasta(
 
                 log_warning(
                     f"Arquivo ignorado e {acao}: "
-                    f"{arquivo.name} -> {destino}"
+                    f"{nome_original} -> {destino_ignorado}"
                 )
 
                 ignorados += 1
@@ -109,16 +111,91 @@ def processar_pasta(
             destino = (
                 pasta_saida / novo_nome
                 if copiar
-                else arquivo.parent / novo_nome
+                else arquivo.with_name(novo_nome)
             )
 
-            if not copiar and arquivo.resolve() == destino.resolve():
+            # SEM --out: renomeia o arquivo original.
+            if not copiar:
+
+                # O nome já está exatamente correto.
+                if nome_original == novo_nome:
+                    processados += 1
+                    continue
+
+                # Diferença apenas de maiúsculas/minúsculas.
+                # No Windows, é necessário usar um nome temporário.
+                if nome_original.casefold() == novo_nome.casefold():
+                    temporario = arquivo.with_name(
+                        f"__renomeando_{uuid4().hex}_{nome_original}"
+                    )
+                
+                    try:
+                        arquivo.rename(temporario)
+                        temporario.rename(destino)
+
+                    except OSError:
+                        if temporario.exists() and not arquivo.exists():
+                            temporario.rename(arquivo)
+                        raise
+
+                    log_ok(
+                        f"Arquivo renomeado: "
+                        f"{nome_original} -> {novo_nome}"
+                    )
+
+                    processados += 1
+                    continue
+
+                # Se o destino já existe, não sobrescreve outro arquivo.
+                if destino.exists():
+                    mesma_tamanho = (
+                        arquivo.stat().st_size
+                        == destino.stat().st_size
+                    )
+
+                    pasta_destino = (
+                        pasta_copiados
+                        if mesma_tamanho
+                        else pasta_copiados_diferentes
+                    )
+
+                    destino_copia = enviar_para_copiados(
+                        arquivo,
+                        pasta_destino,
+                        False,
+                        novo_nome,
+                    )
+
+                    descricao = (
+                        "Cópia movida"
+                        if mesma_tamanho
+                        else "Cópia diferente movida"
+                    )
+
+                    log_warning(
+                        f"{descricao}: "
+                        f"{nome_original} -> {destino_copia}"
+                    )
+
+                    copias += 1
+                    continue
+
+                # Qualquer outra alteração no nome.
+                copiar_ou_mover(arquivo, destino, False)
+
+                log_ok(
+                    f"Arquivo renomeado: "
+                    f"{nome_original} -> {novo_nome}"
+                )
+
                 processados += 1
                 continue
 
+            # COM --out: preserva o original e cria uma cópia.
             if destino.exists():
                 mesma_tamanho = (
-                    arquivo.stat().st_size == destino.stat().st_size
+                    arquivo.stat().st_size
+                    == destino.stat().st_size
                 )
 
                 pasta_destino = (
@@ -130,38 +207,29 @@ def processar_pasta(
                 destino_copia = enviar_para_copiados(
                     arquivo,
                     pasta_destino,
-                    copiar,
+                    True,
                     novo_nome,
                 )
 
                 descricao = (
                     "Cópia criada"
-                    if copiar and mesma_tamanho
-                    else "Cópia diferente criada"
-                    if copiar
-                    else "Cópia movida"
                     if mesma_tamanho
-                    else "Cópia diferente movida"
+                    else "Cópia diferente criada"
                 )
 
                 log_warning(
-                    f"{descricao}: {arquivo.name} -> {destino_copia}"
+                    f"{descricao}: "
+                    f"{nome_original} -> {destino_copia}"
                 )
 
                 copias += 1
                 continue
 
-            from arquivos import copiar_ou_mover
-
-            copiar_ou_mover(
-                arquivo,
-                destino,
-                copiar,
-            )
+            copiar_ou_mover(arquivo, destino, True)
 
             log_ok(
-                f"Arquivo processado: "
-                f"{arquivo.name} -> {destino.name}"
+                f"Arquivo copiado: "
+                f"{nome_original} -> {destino.name}"
             )
 
             processados += 1

@@ -127,6 +127,7 @@ def normalizar_arquivo(caminho: Path) -> str | None:
     nome, setor = resultado_nome_setor
 
     nome = normalizar_nome(nome)
+    if nome == "ANGELA MARIA SILVA AUGUSTO": print(nome.title())
     setor = setor.upper().strip()
     
     inicio, fim = completar_periodo(inicio, fim)
@@ -144,4 +145,5 @@ def normalizar_arquivo(caminho: Path) -> str | None:
     if comentario:
         return f"{prefixo} - {nome} - {setor} - {periodo} - {comentario.upper()}.pdf"
 
+    if nome == "ANGELA MARIA SILVA AUGUSTO": print(nome.title())
     return f"{prefixo} - {nome} - {setor} - {periodo}.pdf"
