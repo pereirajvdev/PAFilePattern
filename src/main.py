@@ -37,7 +37,7 @@ def main():
     pasta_ignorados = (
         Path(args.ignored)
         if args.ignored
-        else pasta_entrada / "Ignored"
+        else (Path(args.out) if args.out else pasta_entrada) / "Ignored"
     )
 
     pasta_nao_processar = (
