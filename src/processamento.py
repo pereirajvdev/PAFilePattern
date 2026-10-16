@@ -7,7 +7,7 @@ from tqdm import tqdm
 from logger import log_ok, log_warning
 from normalizador import normalizar_arquivo
 from cache import carregar_cache, salvar_cache, identificador_arquivo
-from arquivos import obter_destino_disponivel, mover_para_copias
+from arquivos import obter_destino_disponivel
 
 
 def processar_pasta(
@@ -75,7 +75,7 @@ def processar_pasta(
                 arquivo, pasta_entrada
             )
 
-            # Arquivos já registrados não são processados nem movidos.
+            # Arquivos já registrados não são processados novamente.
             if identificador in cache_ignorados:
                 log_warning(
                     f"Ignorado pelo cache, sem mover: {arquivo.name}"
@@ -90,10 +90,19 @@ def processar_pasta(
                     pasta_ignorados / arquivo.name
                 )
 
-                shutil.move(str(arquivo), str(destino_ignorado))
-                cache_ignorados.add(identificador)
+                if pasta_saida:
+                    shutil.copy2(arquivo, destino_ignorado)
+                    log_warning(
+                        f"Arquivo ignorado e copiado: "
+                        f"{arquivo.name} -> {destino_ignorado}"
+                    )
+                else:
+                    shutil.move(str(arquivo), str(destino_ignorado))
+                    log_warning(
+                        f"Arquivo ignorado e movido: {arquivo.name}"
+                    )
 
-                log_warning(f"Arquivo ignorado e movido: {arquivo.name}")
+                cache_ignorados.add(identificador)
                 ignorados += 1
                 continue
 
@@ -103,7 +112,7 @@ def processar_pasta(
                 else arquivo.parent / novo_nome
             )
 
-            if arquivo.resolve() == destino.resolve():
+            if not pasta_saida and arquivo.resolve() == destino.resolve():
                 processados += 1
                 continue
 
@@ -113,19 +122,31 @@ def processar_pasta(
                 )
 
                 pasta_destino = (
-                    pasta_copias if mesma_tamanho
+                    pasta_copias
+                    if mesma_tamanho
                     else pasta_copias_diferentes
                 )
 
-                destino_copia = mover_para_copias(
-                    arquivo, pasta_destino
+                pasta_destino.mkdir(parents=True, exist_ok=True)
+
+                destino_copia = obter_destino_disponivel(
+                    pasta_destino / novo_nome
                 )
 
-                descricao = (
-                    "Cópia movida"
-                    if mesma_tamanho
-                    else "Cópia diferente movida"
-                )
+                if pasta_saida:
+                    shutil.copy2(arquivo, destino_copia)
+                    descricao = (
+                        "Cópia criada"
+                        if mesma_tamanho
+                        else "Cópia diferente criada"
+                    )
+                else:
+                    shutil.move(str(arquivo), str(destino_copia))
+                    descricao = (
+                        "Cópia movida"
+                        if mesma_tamanho
+                        else "Cópia diferente movida"
+                    )
 
                 log_warning(
                     f"{descricao}: {arquivo.name} -> {destino_copia}"
@@ -154,5 +175,6 @@ def processar_pasta(
     print("─" * 50)
     print(f"✓ Processados: {processados}")
     print(f"! Ignorados:   {ignorados}")
-    print(f"↪ Cópias movidas: {copias}")
+    descricao_copias = "Cópias criadas" if pasta_saida else "Cópias movidas"
+    print(f"↪ {descricao_copias}: {copias}")
     print("─" * 50)
